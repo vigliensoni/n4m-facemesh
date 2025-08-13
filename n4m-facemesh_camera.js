@@ -547,7 +547,8 @@ const guiState =
     showVideo: false, // GVM
     drawPoints: true,
     triangulateMesh: store.get("storetriangulateMesh"),
-    flipHorizontal: true   // GVM
+    flipHorizontal: true,  // GVM
+    expandFactor: 1.0
 	},
 	net: null
 };
@@ -641,6 +642,8 @@ async function setupGui(cameras, net)
   });
 
 	output.add(guiState.output, "flipHorizontal");
+  output.add(guiState.output, "expandFactor", 1.0, 4.0, 0.01).name("Zoom");
+
   output.open();
 
 
@@ -653,6 +656,21 @@ function setupFPS()
 {
 	stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
 	// document.body.appendChild(stats.dom); // GVM
+}
+
+// Simple, centered “inflate”: scales points radially from facemesh centroid
+function expandLandmarks(landmarks, factor = 4.00) { // ~8% larger; tweak if you want
+  if (!landmarks || !landmarks.length) return landmarks;
+  let cx = 0, cy = 0;
+  for (let i = 0; i < landmarks.length; i++) { cx += landmarks[i][0]; cy += landmarks[i][1]; }
+  cx /= landmarks.length; cy /= landmarks.length;
+  const out = new Array(landmarks.length);
+  for (let i = 0; i < landmarks.length; i++) {
+    const dx = landmarks[i][0] - cx;
+    const dy = landmarks[i][1] - cy;
+    out[i] = [cx + dx * factor, cy + dy * factor];
+  }
+  return out;
 }
 
 
@@ -704,7 +722,10 @@ function detectFaces(video, net)
       if (predictions.length > 0)
       {
         predictions.forEach(prediction => {
-          const keypoints = prediction.scaledMesh;
+          // Use expanded points for rendering when toggled ON; keep raw for analysis/Max
+          const rawKeypoints = prediction.scaledMesh;
+          const f = guiState.output.expandFactor || 1.0;
+          const keypoints = (f !== 1.0) ? expandLandmarks(rawKeypoints, f) : rawKeypoints;
 
           if (guiState.output.triangulateMesh) {
             for (let i = 0; i < TRIANGULATION.length / 3; i++) {
