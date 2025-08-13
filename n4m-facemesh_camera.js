@@ -544,9 +544,10 @@ const guiState =
   },
 	output: {
     showBoundingBox: false,
-    showVideo: false, //GVM
+    showVideo: false, // GVM
     drawPoints: true,
-    triangulateMesh: store.get("storetriangulateMesh")
+    triangulateMesh: store.get("storetriangulateMesh"),
+    flipHorizontal: true   // GVM
 	},
 	net: null
 };
@@ -638,7 +639,10 @@ async function setupGui(cameras, net)
     _strokeColour = val;
     store.set("storehand_strokeColour", val);
   });
-	output.open();
+
+	output.add(guiState.output, "flipHorizontal");
+  output.open();
+
 
 }
 
@@ -663,16 +667,28 @@ function detectFaces(video, net)
 
   	canvas.width = videoWidth*1.8; // GVM magic numbers to have face middle of screen
   	canvas.height = videoHeight*1.2; // GVM magic numbers to have face middle of screen
-    ctx.translate(canvas.width, 0); 
-    ctx.scale(-2, 2); // GVM controls scaling of mesh
+    // ctx.translate(canvas.width, 0); 
+    // ctx.scale(-2, 2); // GVM controls scaling of mesh
     ctx.lineWidth = 0.5;
 
     async function renderPrediction()
     {
   		// Begin monitoring code for frames per second
-  		if (statsShow) stats.begin();
+    if (statsShow) stats.begin();
 
-  		ctx.clearRect(0, 0, videoWidth, videoHeight);
+    // Set transform each frame based on the toggle
+    if (guiState.output.flipHorizontal) {
+      // mirror horizontally and scale by 2x like before
+      ctx.setTransform(-2, 0, 0, 2, canvas.width, 0);
+    } else {
+      // no mirror, keep the same 2x scale you were using
+      ctx.setTransform(2, 0, 0, 2, 0, 0);
+    }
+
+    ctx.clearRect(0, 0, videoWidth, videoHeight);
+
+
+
 // draw the video
   		if (guiState.output.showVideo)
       {
