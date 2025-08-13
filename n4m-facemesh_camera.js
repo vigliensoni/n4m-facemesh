@@ -41,6 +41,9 @@ tf.setBackend('wasm').then(() => {bindPage()});
 
 //import {TRIANGULATION} from './triangulation'; //syntax?
 
+const DATESTART = Date.now();
+console.log(DATESTART);
+
 const TRIANGULATION = [
     127, 34, 139, 11, 0, 37, 232, 231, 120, 72, 37, 39, 128, 121, 47, 232, 121,
     128, 104, 69, 67, 175, 171, 148, 157, 154, 155, 118, 50, 101, 73, 39, 40, 9,
@@ -269,8 +272,8 @@ var palette =
   strokeColour: store.get("storehand_strokeColour") // CSS string
 };
 
-const videoWidth = 600;
-const videoHeight = 500;
+const videoWidth = 1200;
+const videoHeight = 1000;
 const stats = new Stats();
 
 var _fillColour = store.get("storehand_fillColour");
@@ -415,9 +418,20 @@ function drawPath(ctx, points, closePath)
 {
   ctx.fillStyle = _fillColour;
   ctx.strokeStyle = _strokeColour;
+  ctx.lineWidth = 2;
+  let color;
+  // const DATENOW = Date.now();
+  // if (DATENOW - DATESTART < 1000) { 
+  //   color = 0.1 } 
+  // else if (DATENOW - DATESTART > 1000) { 
+  //   color = 1 } 
+  
   const region = new Path2D();
   region.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) {
+    ctx.strokeStyle = `rgb(${Math.floor(Math.random() * 255 * i)}, 
+    ${Math.floor(Math.random() * 255 * i )},
+    ${Math.floor(Math.random() * 255 * i )})`;
     const point = points[i];
     region.lineTo(point[0], point[1]);
   }
@@ -426,6 +440,28 @@ function drawPath(ctx, points, closePath)
     region.closePath();
   }
   ctx.stroke(region);
+
+  ctx.strokeStyle = `rgb(0, 255, 0)`;
+  ctx.lineWidth = 5;
+  const region2 = new Path2D();
+  region2.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) {
+    ctx.strokeStyle = `rgb(${Math.floor(Math.random() * 255 * i )}, 
+    ${Math.floor(Math.random() * 255 * i )},
+    ${Math.floor(Math.random() * 255 * i )},
+    0.05)`;
+    const point = points[i];
+    region2.lineTo(point[0]*4-1800, point[1]*4-1000);
+  }
+
+  if (closePath) {
+    region2.closePath();
+  }
+  ctx.stroke(region2);
+
+
+
+  
 }
 
 /**
@@ -507,8 +543,8 @@ const guiState =
     scoreThreshold: store.get("storescoreThreshold")
   },
 	output: {
-    showBoundingBox: true,
-    showVideo: true,
+    showBoundingBox: false,
+    showVideo: false, //GVM
     drawPoints: true,
     triangulateMesh: store.get("storetriangulateMesh")
 	},
@@ -526,7 +562,8 @@ async function setupGui(cameras, net)
 	}
 
 	const gui = new dat.GUI({width: 300});
-
+  // dat.GUI.toggleHide();
+  gui.close()
 
 	let devices = gui.addFolder("Devices");
 	const videoDevices = await listVideoDevices();
@@ -611,7 +648,7 @@ async function setupGui(cameras, net)
 function setupFPS()
 {
 	stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
-	document.body.appendChild(stats.dom);
+	// document.body.appendChild(stats.dom); // GVM
 }
 
 
@@ -624,10 +661,10 @@ function detectFaces(video, net)
   	// since images are being fed from a webcam
   	const flipHorizontal = true;
 
-  	canvas.width = videoWidth;
-  	canvas.height = videoHeight;
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+  	canvas.width = videoWidth*1.8; // GVM magic numbers to have face middle of screen
+  	canvas.height = videoHeight*1.2; // GVM magic numbers to have face middle of screen
+    ctx.translate(canvas.width, 0); 
+    ctx.scale(-2, 2); // GVM controls scaling of mesh
     ctx.lineWidth = 0.5;
 
     async function renderPrediction()
@@ -636,7 +673,7 @@ function detectFaces(video, net)
   		if (statsShow) stats.begin();
 
   		ctx.clearRect(0, 0, videoWidth, videoHeight);
-
+// draw the video
   		if (guiState.output.showVideo)
       {
   		  //ctx.save();
@@ -648,7 +685,6 @@ function detectFaces(video, net)
 
       const predictions = await guiState.net.estimateFaces(video);
       let facemeshDict = {};
-
       if (predictions.length > 0)
       {
         predictions.forEach(prediction => {
