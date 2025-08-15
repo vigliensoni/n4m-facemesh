@@ -433,7 +433,7 @@ function drawPath(ctx, points, closePath)
     ${Math.floor(Math.random() * 255 * i )},
     ${Math.floor(Math.random() * 255 * i )})`;
     const point = points[i];
-    region.lineTo(point[0], point[1]);
+    region.lineTo(point[0], point[1]); // Draw line to each face point 
   }
 
   if (closePath) {
@@ -451,7 +451,10 @@ function drawPath(ctx, points, closePath)
     ${Math.floor(Math.random() * 255 * i )},
     0.05)`;
     const point = points[i];
-    region2.lineTo(point[0]*4-1800, point[1]*4-1000);
+    region2.lineTo(
+      point[0] * 4 - guiState.output.offsetX,
+      point[1] * 4 - guiState.output.offsetY
+    );
   }
 
   if (closePath) {
@@ -548,7 +551,9 @@ const guiState =
     drawPoints: true,
     triangulateMesh: store.get("storetriangulateMesh"),
     flipHorizontal: true,  // GVM
-    expandFactor: 1.0
+    expandFactor: 1.0,
+    offsetX: 1800, // NEW slider for X offset
+    offsetY: 1000  // NEW slider for Y offset
 	},
 	net: null
 };
@@ -644,6 +649,9 @@ async function setupGui(cameras, net)
 	output.add(guiState.output, "flipHorizontal");
   output.add(guiState.output, "expandFactor", 1.0, 4.0, 0.01).name("Zoom");
 
+  output.add(guiState.output, "offsetX", -3000, 3000, 1).name("Region2 X Offset");
+  output.add(guiState.output, "offsetY", -3000, 3000, 1).name("Region2 Y Offset");
+
   output.open();
 
 
@@ -730,39 +738,40 @@ function detectFaces(video, net)
           if (guiState.output.triangulateMesh) {
             for (let i = 0; i < TRIANGULATION.length / 3; i++) {
               const points = [
-                TRIANGULATION[i * 3], TRIANGULATION[i * 3 + 1],
+                TRIANGULATION[i * 3], 
+                TRIANGULATION[i * 3 + 1],
                 TRIANGULATION[i * 3 + 2]
               ].map(index => keypoints[index]);
               drawPath(ctx, points, true);
             }
           }
 
-          if (guiState.output.drawPoints) {
-            for (let i = 0; i < keypoints.length; i++) {
-              const x = keypoints[i][0];
-              const y = keypoints[i][1];
-              ctx.beginPath();
-              ctx.fillStyle = _fillColour;
-              ctx.strokeStyle = _strokeColour;
-              ctx.arc(x, y, 1, 0, 2 * Math.PI);
-              ctx.fill();
-            }
-          }
+          // if (guiState.output.drawPoints) {
+          //   for (let i = 0; i < keypoints.length; i++) {
+          //     const x = keypoints[i][0];
+          //     const y = keypoints[i][1];
+          //     ctx.beginPath();
+          //     ctx.fillStyle = _fillColour;
+          //     ctx.strokeStyle = _strokeColour;
+          //     ctx.arc(x, y, 1, 0, 2 * Math.PI);
+          //     ctx.fill();
+          //   }
+          // }
 
           const annotations = prediction.annotations;
 
-          facemeshDict["faceInViewConfidence"] = prediction.faceInViewConfidence;
-          facemeshDict["boundingBox"] = prediction.boundingBox;
-          if (guiState.output.showBoundingBox) {
-            ctx.beginPath();
-            ctx.rect(prediction.boundingBox.topLeft[0][0], prediction.boundingBox.topLeft[0][1], (prediction.boundingBox.bottomRight[0][0] - prediction.boundingBox.topLeft[0][0]), (prediction.boundingBox.bottomRight[0][1] - prediction.boundingBox.topLeft[0][1]) );
-            ctx.stroke();
-          }
+          // facemeshDict["faceInViewConfidence"] = prediction.faceInViewConfidence;
+          // facemeshDict["boundingBox"] = prediction.boundingBox;
+          // if (guiState.output.showBoundingBox) {
+          //   ctx.beginPath();
+          //   ctx.rect(prediction.boundingBox.topLeft[0][0], prediction.boundingBox.topLeft[0][1], (prediction.boundingBox.bottomRight[0][0] - prediction.boundingBox.topLeft[0][0]), (prediction.boundingBox.bottomRight[0][1] - prediction.boundingBox.topLeft[0][1]) );
+          //   ctx.stroke();
+          // }
 
           //facemeshDict["mesh"] = {};
           //prediction.mesh.forEach(([value1, value2, value3], idx) => facemeshDict["mesh"][idx] = [value1, value2, value3]);
 
-          facemeshDict["scaledMesh"] = { keypoints };
+          // facemeshDict["scaledMesh"] = { keypoints };
           //facemeshDict["scaledMesh"] = {};
           //prediction.scaledMesh.forEach(([value1, value2, value3], idx) => facemeshDict["scaledMesh"][idx] = [value1, value2, value3]);
 
@@ -790,23 +799,23 @@ function detectFaces(video, net)
           facemeshDict["pose"] = {};
           var position = [ ((prediction.boundingBox.topLeft[0][0] + prediction.boundingBox.bottomRight[0][0]) / 2), ((prediction.boundingBox.topLeft[0][1] + prediction.boundingBox.bottomRight[0][1]) / 2) ];
           //facemeshDict["pose"] = { position };
-          ctx.beginPath();
-          ctx.fillStyle = _fillColour;
-          ctx.strokeStyle = _strokeColour;
-          ctx.arc(position[0], position[1], 1, 0, 2 * Math.PI);
-          ctx.fill();
+          // ctx.beginPath();
+          // ctx.fillStyle = _fillColour;
+          // ctx.strokeStyle = _strokeColour;
+          // ctx.arc(position[0], position[1], 1, 0, 2 * Math.PI);
+          // ctx.fill();
 
-          ctx.beginPath();
-          ctx.arc(leftCheek[0], leftCheek[1], 2, 0, 2 * Math.PI);
-          ctx.fill();
+          // ctx.beginPath();
+          // ctx.arc(leftCheek[0], leftCheek[1], 2, 0, 2 * Math.PI);
+          // ctx.fill();
 
-          ctx.beginPath();
-          ctx.arc(rightCheek[0], rightCheek[1], 2, 0, 2 * Math.PI);
-          ctx.fill();
+          // ctx.beginPath();
+          // ctx.arc(rightCheek[0], rightCheek[1], 2, 0, 2 * Math.PI);
+          // ctx.fill();
 
-          ctx.beginPath();
-          ctx.arc(chin[0], chin[1], 2, 0, 2 * Math.PI);
-          ctx.fill();
+          // ctx.beginPath();
+          // ctx.arc(chin[0], chin[1], 2, 0, 2 * Math.PI);
+          // ctx.fill();
 
 
           var scale = processGesture(prediction.scaledMesh, 10, 152);
