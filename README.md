@@ -16,3 +16,4 @@ Based around [Yuichi Yogo](https://github.com/yuichkun)'s great work porting Ele
 
 # Controls
 - `w` and `s` increase and decrease the thickness of the expanded facemesh.
+-  `q` and `a` control the zooming of the facemesh.

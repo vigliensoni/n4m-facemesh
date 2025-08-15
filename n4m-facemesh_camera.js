@@ -923,13 +923,20 @@ async function bindPage()
 
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "w") {
+    if (event.key === "w") {
     guiState.output.lineWidthNorm = Math.min(1, guiState.output.lineWidthNorm + 0.01);
   } else if (event.key === "s") {
     guiState.output.lineWidthNorm = Math.max(0, guiState.output.lineWidthNorm - 0.01);
+  } else if (event.key === "q") {
+    guiState.output.expandFactor = Math.min(4.0, guiState.output.expandFactor + 0.05);
+  } else if (event.key === "a") {
+    guiState.output.expandFactor = Math.max(1.0, guiState.output.expandFactor - 0.05);
   } else {
     return; // ignore other keys
   }
+
+
+
   // update mapped value
   guiState.output.lineWidth = expMap(guiState.output.lineWidthNorm, 0.1, 5, 500);
 
