@@ -442,7 +442,7 @@ function drawPath(ctx, points, closePath)
   ctx.stroke(region);
 
   ctx.strokeStyle = `rgb(0, 255, 0)`;
-  ctx.lineWidth = 5;
+  ctx.lineWidth = guiState.output.lineWidth;
   const region2 = new Path2D();
   region2.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) {
@@ -553,7 +553,9 @@ const guiState =
     flipHorizontal: true,  // GVM
     expandFactor: 1.0,
     offsetX: 1800, // NEW slider for X offset
-    offsetY: 1000  // NEW slider for Y offset
+    offsetY: 1000,  // NEW slider for Y offset
+    lineWidthNorm: 0.5,   // normalized slider position, default in the middle (→ 5)
+    lineWidth: 5          // actual value after mapping
 	},
 	net: null
 };
@@ -652,6 +654,12 @@ async function setupGui(cameras, net)
   output.add(guiState.output, "offsetX", -3000, 3000, 1).name("Region2 X Offset");
   output.add(guiState.output, "offsetY", -3000, 3000, 1).name("Region2 Y Offset");
 
+
+  output.add(guiState.output, "lineWidthNorm", 0, 1, 0.001).name("Line Width")
+  .onChange(val => {
+    guiState.output.lineWidth = expMap(val, 0.1, 5, 500);
+  });
+
   output.open();
 
 
@@ -681,6 +689,20 @@ function expandLandmarks(landmarks, factor = 4.00) { // ~8% larger; tweak if you
   return out;
 }
 
+function expMap(val, min, mid, max) {
+  // val is in [0,1]
+  const logMin = Math.log(min);
+  const logMid = Math.log(mid);
+  const logMax = Math.log(max);
+
+  if (val <= 0.5) {
+    // Map [0,0.5] → [min,mid]
+    return Math.exp(logMin + (logMid - logMin) * (val / 0.5));
+  } else {
+    // Map [0.5,1] → [mid,max]
+    return Math.exp(logMid + (logMax - logMid) * ((val - 0.5) / 0.5));
+  }
+}
 
 function detectFaces(video, net)
 {
