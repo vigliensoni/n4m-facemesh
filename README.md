@@ -13,3 +13,6 @@ Based around [Yuichi Yogo](https://github.com/yuichkun)'s great work porting Ele
 
 # Mesh Keypoints Map
 ![meshmap](https://github.com/lysdexic-audio/n4m-facemesh/blob/master/mesh_map.jpg)
+
+# Controls
+- `w` and `s` increase and decrease the thickness of the expanded facemesh.

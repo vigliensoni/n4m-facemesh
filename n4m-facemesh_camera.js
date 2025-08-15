@@ -921,6 +921,27 @@ async function bindPage()
   detectFaces(video, net);
 }
 
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "w") {
+    guiState.output.lineWidthNorm = Math.min(1, guiState.output.lineWidthNorm + 0.01);
+  } else if (event.key === "s") {
+    guiState.output.lineWidthNorm = Math.max(0, guiState.output.lineWidthNorm - 0.01);
+  } else {
+    return; // ignore other keys
+  }
+  // update mapped value
+  guiState.output.lineWidth = expMap(guiState.output.lineWidthNorm, 0.1, 5, 500);
+
+  // force dat.GUI panel update
+  if (window.gui) {
+    window.gui.__controllers.forEach(c => c.updateDisplay());
+    for (let f in window.gui.__folders) {
+      Object.values(window.gui.__folders[f].__controllers).forEach(c => c.updateDisplay());
+    }
+  }
+});
+
 navigator.getUserMedia = navigator.getUserMedia ||
     navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
 // kick off the demo
