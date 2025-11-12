@@ -551,7 +551,7 @@ const guiState =
     drawPoints: true,
     triangulateMesh: store.get("storetriangulateMesh"),
     flipHorizontal: true,  // GVM
-    expandFactor: 1.0,
+    expandFactor: 4.0,
     offsetX: 1800, // NEW slider for X offset
     offsetY: 1000,  // NEW slider for Y offset
     lineWidthNorm: 0.5,   // normalized slider position, default in the middle (→ 5)
