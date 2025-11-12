@@ -279,6 +279,44 @@ const stats = new Stats();
 var _fillColour = store.get("storehand_fillColour");
 var _strokeColour = store.get("storehand_strokeColour");
 
+const DEFAULT_LINE_WIDTH_MAPPING = {
+	deviceName: "Faderfox EC4",
+	channel: 3, // MIDI ch4 (1-based) → zero-indexed channel value
+	controller: 10
+};
+
+const DEFAULT_ZOOM_MAPPING = {
+	deviceName: "Faderfox EC4",
+	channel: 3,
+	controller: 11
+};
+
+const midiState = {
+	access: null,
+	inputs: new Map(),
+	isLearningLineWidth: false,
+	isLearningZoom: false,
+	lineWidthMapping: null,
+	zoomMapping: null
+};
+
+const midiGuiState = {
+	status: "Web MIDI inactive",
+	lineWidthMappingInfo: formatMidiMappingLabel(
+		DEFAULT_LINE_WIDTH_MAPPING.deviceName,
+		DEFAULT_LINE_WIDTH_MAPPING.channel,
+		DEFAULT_LINE_WIDTH_MAPPING.controller
+	),
+	zoomMappingInfo: formatMidiMappingLabel(
+		DEFAULT_ZOOM_MAPPING.deviceName,
+		DEFAULT_ZOOM_MAPPING.channel,
+		DEFAULT_ZOOM_MAPPING.controller
+	)
+};
+
+applyDefaultLineWidthMapping();
+applyDefaultZoomMapping();
+
 function isAndroid() {
 	return /Android/i.test(navigator.userAgent);
 }
@@ -571,6 +609,7 @@ async function setupGui(cameras, net)
 	}
 
 	const gui = new dat.GUI({width: 300});
+	window.gui = gui;
   // dat.GUI.toggleHide();
   gui.close()
 
@@ -660,6 +699,21 @@ async function setupGui(cameras, net)
     guiState.output.lineWidth = expMap(val, 0.1, 5, 500);
   });
 
+	const midiFolder = gui.addFolder("MIDI");
+	midiFolder.add(midiGuiState, "status").name("Status").listen();
+	midiFolder.add(midiGuiState, "lineWidthMappingInfo").name("Line Width Map").listen();
+	midiFolder.add(midiGuiState, "zoomMappingInfo").name("Zoom Map").listen();
+	const midiActions = {
+		learnLineWidth: () => startLineWidthLearn(),
+		clearLineWidth: () => clearLineWidthMapping(),
+		learnZoom: () => startZoomLearn(),
+		clearZoom: () => clearZoomMapping()
+	};
+	midiFolder.add(midiActions, "learnLineWidth").name("Learn Line Width");
+	midiFolder.add(midiActions, "clearLineWidth").name("Clear Line Width");
+	midiFolder.add(midiActions, "learnZoom").name("Learn Zoom");
+	midiFolder.add(midiActions, "clearZoom").name("Clear Zoom");
+
   output.open();
 
 
@@ -672,6 +726,282 @@ function setupFPS()
 {
 	stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
 	// document.body.appendChild(stats.dom); // GVM
+}
+
+function refreshOutputGuiControls()
+{
+	if (typeof window === "undefined" || !window.gui) {
+		return;
+	}
+
+	if (Array.isArray(window.gui.__controllers)) {
+		window.gui.__controllers.forEach(controller => controller.updateDisplay());
+	}
+
+	if (window.gui.__folders) {
+		Object.values(window.gui.__folders).forEach(folder => {
+			if (folder && folder.__controllers) {
+				Object.values(folder.__controllers).forEach(controller => controller.updateDisplay());
+			}
+		});
+	}
+}
+
+function initMIDI()
+{
+	if (typeof navigator === "undefined" || !navigator.requestMIDIAccess) {
+		midiGuiState.status = "Web MIDI unavailable";
+		midiGuiState.lineWidthMappingInfo = "Browser does not expose Web MIDI";
+		return;
+	}
+
+	midiGuiState.status = "Requesting access";
+	navigator.requestMIDIAccess().then(access => {
+		midiState.access = access;
+		midiGuiState.status = "Ready";
+		access.onstatechange = refreshMidiInputs;
+		refreshMidiInputs();
+	}).catch(err => {
+		console.warn("Unable to init MIDI", err);
+		midiGuiState.status = "Error";
+	});
+}
+
+function refreshMidiInputs()
+{
+	if (!midiState.access) {
+		return;
+	}
+
+	const activeIds = new Set();
+	midiState.access.inputs.forEach(input => {
+		activeIds.add(input.id);
+		if (!midiState.inputs.has(input.id)) {
+			input.onmidimessage = handleMIDIMessage;
+			midiState.inputs.set(input.id, input);
+		}
+	});
+
+	Array.from(midiState.inputs.keys()).forEach(id => {
+		if (!activeIds.has(id)) {
+			const input = midiState.inputs.get(id);
+			if (input) {
+				input.onmidimessage = null;
+			}
+			midiState.inputs.delete(id);
+			if (midiState.lineWidthMapping && midiState.lineWidthMapping.inputId === id) {
+				midiState.lineWidthMapping = null;
+				midiGuiState.lineWidthMappingInfo = "Unassigned";
+			}
+			if (midiState.zoomMapping && midiState.zoomMapping.inputId === id) {
+				midiState.zoomMapping = null;
+				midiGuiState.zoomMappingInfo = "Unassigned";
+			}
+		}
+	});
+
+	const hasInputs = midiState.inputs.size > 0;
+	const isLearning = midiState.isLearningLineWidth || midiState.isLearningZoom;
+	const hasMappings = Boolean(midiState.lineWidthMapping || midiState.zoomMapping);
+
+	if (!hasInputs) {
+		midiGuiState.status = "No inputs";
+	} else if (isLearning) {
+		midiGuiState.status = "Learning...";
+	} else if (hasMappings) {
+		midiGuiState.status = "Mapped";
+	} else {
+		midiGuiState.status = "Ready";
+	}
+}
+
+function handleMIDIMessage(event)
+{
+	if (!event.data || event.data.length < 3) {
+		return;
+	}
+
+	const [status, data1, data2] = event.data;
+	const command = status >> 4;
+	const channel = status & 0xf;
+
+	if (command !== 11) { // Only listen for CC messages
+		return;
+	}
+
+	const port = event.currentTarget || event.target;
+	const portId = port && port.id ? port.id : null;
+	const portName = (port && typeof port.name === "string" && port.name.length) ? port.name : null;
+	const displayName = portName || "MIDI";
+
+	if (midiState.isLearningLineWidth) {
+		midiState.lineWidthMapping = {
+			inputId: portId,
+			deviceName: displayName,
+			channel: channel,
+			controller: data1
+		};
+		midiGuiState.lineWidthMappingInfo = formatMidiMappingLabel(displayName, channel, data1);
+		midiState.isLearningLineWidth = false;
+		midiGuiState.status = "Mapped";
+		updateLineWidthFromMidi(data2);
+		return;
+	}
+
+	if (midiState.isLearningZoom) {
+		midiState.zoomMapping = {
+			inputId: portId,
+			deviceName: displayName,
+			channel: channel,
+			controller: data1
+		};
+		midiGuiState.zoomMappingInfo = formatMidiMappingLabel(displayName, channel, data1);
+		midiState.isLearningZoom = false;
+		midiGuiState.status = "Mapped";
+		updateZoomFromMidi(data2);
+		return;
+	}
+
+	const mappingLineWidth = midiState.lineWidthMapping;
+	const mappingZoom = midiState.zoomMapping;
+
+	if (mappingLineWidth &&
+			mappingMatchesPort(mappingLineWidth, portId, portName) &&
+			mappingLineWidth.channel === channel &&
+			mappingLineWidth.controller === data1) {
+		updateLineWidthFromMidi(data2);
+	}
+
+	if (mappingZoom &&
+			mappingMatchesPort(mappingZoom, portId, portName) &&
+			mappingZoom.channel === channel &&
+			mappingZoom.controller === data1) {
+		updateZoomFromMidi(data2);
+	}
+}
+
+function updateLineWidthFromMidi(value)
+{
+	const normalized = Math.min(1, Math.max(0, value / 127));
+	guiState.output.lineWidthNorm = normalized;
+	guiState.output.lineWidth = expMap(normalized, 0.1, 5, 500);
+	refreshOutputGuiControls();
+}
+
+function updateZoomFromMidi(value)
+{
+	const normalized = Math.min(1, Math.max(0, value / 127));
+	const minZoom = 1.0;
+	const maxZoom = 4.0;
+	guiState.output.expandFactor = minZoom + normalized * (maxZoom - minZoom);
+	refreshOutputGuiControls();
+}
+
+function startLineWidthLearn()
+{
+	if (!midiState.access) {
+		initMIDI();
+		return;
+	}
+
+	if (!midiState.inputs.size) {
+		midiGuiState.status = "No inputs";
+		return;
+	}
+
+	midiState.isLearningZoom = false;
+	midiState.isLearningLineWidth = true;
+	midiGuiState.status = "Learning... move a control";
+}
+
+function clearLineWidthMapping()
+{
+	midiState.lineWidthMapping = null;
+	midiState.isLearningLineWidth = false;
+	midiGuiState.lineWidthMappingInfo = "Unassigned";
+	midiGuiState.status = midiState.inputs.size ? "Ready" : "No inputs";
+}
+
+function startZoomLearn()
+{
+	if (!midiState.access) {
+		initMIDI();
+		return;
+	}
+
+	if (!midiState.inputs.size) {
+		midiGuiState.status = "No inputs";
+		return;
+	}
+
+	midiState.isLearningLineWidth = false;
+	midiState.isLearningZoom = true;
+	midiGuiState.status = "Learning... move a control";
+}
+
+function clearZoomMapping()
+{
+	midiState.zoomMapping = null;
+	midiState.isLearningZoom = false;
+	midiGuiState.zoomMappingInfo = "Unassigned";
+	midiGuiState.status = midiState.inputs.size ? "Ready" : "No inputs";
+}
+
+function formatMidiMappingLabel(portName, channel, controller)
+{
+	const label = portName || "Any input";
+	return `${label} ch${channel + 1} CC${controller}`;
+}
+
+function applyDefaultLineWidthMapping()
+{
+	midiState.lineWidthMapping = {
+		inputId: null,
+		deviceName: DEFAULT_LINE_WIDTH_MAPPING.deviceName,
+		channel: DEFAULT_LINE_WIDTH_MAPPING.channel,
+		controller: DEFAULT_LINE_WIDTH_MAPPING.controller
+	};
+	midiGuiState.lineWidthMappingInfo = formatMidiMappingLabel(
+		DEFAULT_LINE_WIDTH_MAPPING.deviceName,
+		DEFAULT_LINE_WIDTH_MAPPING.channel,
+		DEFAULT_LINE_WIDTH_MAPPING.controller
+	);
+}
+
+function applyDefaultZoomMapping()
+{
+	midiState.zoomMapping = {
+		inputId: null,
+		deviceName: DEFAULT_ZOOM_MAPPING.deviceName,
+		channel: DEFAULT_ZOOM_MAPPING.channel,
+		controller: DEFAULT_ZOOM_MAPPING.controller
+	};
+	midiGuiState.zoomMappingInfo = formatMidiMappingLabel(
+		DEFAULT_ZOOM_MAPPING.deviceName,
+		DEFAULT_ZOOM_MAPPING.channel,
+		DEFAULT_ZOOM_MAPPING.controller
+	);
+}
+
+function mappingMatchesPort(mapping, portId, portName)
+{
+	if (!mapping) {
+		return false;
+	}
+
+	if (mapping.inputId) {
+		return mapping.inputId === portId;
+	}
+
+	if (!mapping.deviceName) {
+		return true;
+	}
+
+	if (!portName) {
+		return false;
+	}
+
+	return portName.toLowerCase().includes(mapping.deviceName.toLowerCase());
 }
 
 // Simple, centered “inflate”: scales points radially from facemesh centroid
@@ -917,6 +1247,7 @@ async function bindPage()
 	}
 
 	setupGui([], net);
+	initMIDI();
 	if (statsShow) setupFPS();
   detectFaces(video, net);
 }
@@ -940,13 +1271,7 @@ document.addEventListener("keydown", (event) => {
   // update mapped value
   guiState.output.lineWidth = expMap(guiState.output.lineWidthNorm, 0.1, 5, 500);
 
-  // force dat.GUI panel update
-  if (window.gui) {
-    window.gui.__controllers.forEach(c => c.updateDisplay());
-    for (let f in window.gui.__folders) {
-      Object.values(window.gui.__folders[f].__controllers).forEach(c => c.updateDisplay());
-    }
-  }
+  refreshOutputGuiControls();
 });
 
 navigator.getUserMedia = navigator.getUserMedia ||
