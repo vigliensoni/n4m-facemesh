@@ -454,55 +454,42 @@ function getOrientation(v1, v2, v3)
 
 function drawPath(ctx, points, closePath)
 {
-  ctx.fillStyle = _fillColour;
-  ctx.strokeStyle = _strokeColour;
+  // Only the strokeStyle in effect at the moment stroke() runs is ever
+  // visible, so the color only needs computing once per layer (not once
+  // per point) -- and a Path2D built once and discarded is more overhead
+  // than drawing straight into the context's own path.
+  const last = points.length - 1;
+
   ctx.lineWidth = 2;
-  let color;
-  // const DATENOW = Date.now();
-  // if (DATENOW - DATESTART < 1000) { 
-  //   color = 0.1 } 
-  // else if (DATENOW - DATESTART > 1000) { 
-  //   color = 1 } 
-  
-  const region = new Path2D();
-  region.moveTo(points[0][0], points[0][1]);
+  ctx.strokeStyle = `rgb(${Math.floor(Math.random() * 255 * last)}, ${Math.floor(Math.random() * 255 * last)}, ${Math.floor(Math.random() * 255 * last)})`;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) {
-    ctx.strokeStyle = `rgb(${Math.floor(Math.random() * 255 * i)}, 
-    ${Math.floor(Math.random() * 255 * i )},
-    ${Math.floor(Math.random() * 255 * i )})`;
-    const point = points[i];
-    region.lineTo(point[0], point[1]); // Draw line to each face point 
+    ctx.lineTo(points[i][0], points[i][1]); // Draw line to each face point
   }
-
   if (closePath) {
-    region.closePath();
+    ctx.closePath();
   }
-  ctx.stroke(region);
+  ctx.stroke();
 
-  ctx.strokeStyle = `rgb(0, 255, 0)`;
   ctx.lineWidth = guiState.output.lineWidth;
-  const region2 = new Path2D();
-  region2.moveTo(points[0][0], points[0][1]);
+  ctx.strokeStyle = `rgba(${Math.floor(Math.random() * 255 * last)}, ${Math.floor(Math.random() * 255 * last)}, ${Math.floor(Math.random() * 255 * last)}, 0.05)`;
+  ctx.beginPath();
+  // Anchor point stays unscaled (matches the mesh position) while the rest
+  // of the triangle is scaled/offset outward -- that mismatch is what makes
+  // this read as spikes shooting out of the head rather than a uniformly
+  // scaled ghost copy of the mesh.
+  ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < points.length; i++) {
-    ctx.strokeStyle = `rgb(${Math.floor(Math.random() * 255 * i )}, 
-    ${Math.floor(Math.random() * 255 * i )},
-    ${Math.floor(Math.random() * 255 * i )},
-    0.05)`;
-    const point = points[i];
-    region2.lineTo(
-      point[0] * 4 - guiState.output.offsetX,
-      point[1] * 4 - guiState.output.offsetY
+    ctx.lineTo(
+      points[i][0] * 4 - guiState.output.offsetX,
+      points[i][1] * 4 - guiState.output.offsetY
     );
   }
-
   if (closePath) {
-    region2.closePath();
+    ctx.closePath();
   }
-  ctx.stroke(region2);
-
-
-
-  
+  ctx.stroke();
 }
 
 /**
