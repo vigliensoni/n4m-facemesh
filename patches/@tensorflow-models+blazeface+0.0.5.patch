@@ -1,0 +1,18 @@
+diff --git a/node_modules/@tensorflow-models/blazeface/dist/index.js b/node_modules/@tensorflow-models/blazeface/dist/index.js
+index 91bace8..5d0146a 100644
+--- a/node_modules/@tensorflow-models/blazeface/dist/index.js
++++ b/node_modules/@tensorflow-models/blazeface/dist/index.js
+@@ -2,9 +2,11 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ const tfconv = require("@tensorflow/tfjs-converter");
+ const face_1 = require("./face");
+-const BLAZEFACE_MODEL_URL = 'https://tfhub.dev/tensorflow/tfjs-model/blazeface/1/default/1';
++const path = require("path");
++const { loadLocalGraphModel } = require(path.join(__dirname, "..", "..", "..", "..", "local-model-loader"));
++const BLAZEFACE_MODEL_URL = path.join(__dirname, "..", "..", "..", "..", "models", "blazeface");
+ async function load({ maxFaces = 10, inputWidth = 128, inputHeight = 128, iouThreshold = 0.3, scoreThreshold = 0.75 } = {}) {
+-    const blazeface = await tfconv.loadGraphModel(BLAZEFACE_MODEL_URL, { fromTFHub: true });
++    const blazeface = await tfconv.loadGraphModel(loadLocalGraphModel(BLAZEFACE_MODEL_URL));
+     const model = new face_1.BlazeFaceModel(blazeface, inputWidth, inputHeight, maxFaces, iouThreshold, scoreThreshold);
+     return model;
+ }

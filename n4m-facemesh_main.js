@@ -6,8 +6,8 @@ function createWindow() {
 	console.log("Loading n4m-handpose..");
 	// Create the browser window.
 	const win = new BrowserWindow({
-		width: 622, 
-		height: 542, 
+		width: 542, // 622
+		height: 622, // 542
 		webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
