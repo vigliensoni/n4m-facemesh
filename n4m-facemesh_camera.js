@@ -35,8 +35,6 @@ tfjsWasm.setWasmPath(
     `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
         version.version}/dist/tfjs-backend-wasm.wasm`);
 
-tf.setBackend('wasm').then(() => {bindPage()});
-
 //console.log("version: ", version.version);
 
 //import {TRIANGULATION} from './triangulation'; //syntax?
@@ -253,7 +251,9 @@ const schema = {
   },
   storeBackend: {
     type: 'string',
-    default: 'wasm'
+    // wasm backend hits a known tfjs-backend-wasm bug ("memory access out of
+    // bounds") on every frame under Electron's modern V8; webgl is stable.
+    default: 'webgl'
   },
   storehand_fillColour: {
     type: 'string',
@@ -553,12 +553,21 @@ async function changeVideoSource(newDevice)
 		}
 	});
 	video.srcObject = stream;
+	try {
+		await video.play();
+	} catch (e) {
+		console.error("changeVideoSource: video.play() failed:", e);
+	}
 }
 
 async function loadVideo()
 {
 	const video = await setupCamera();
-	video.play();
+	try {
+		await video.play();
+	} catch (e) {
+		console.error("loadVideo: video.play() failed:", e);
+	}
 
 	return video;
 }
@@ -1051,6 +1060,7 @@ function detectFaces(video, net)
 
     async function renderPrediction()
     {
+      try {
   		// Begin monitoring code for frames per second
     if (statsShow) stats.begin();
 
@@ -1212,10 +1222,15 @@ function detectFaces(video, net)
         //sendToMaxPatch(predictions[0]);
         sendToMaxPatch(facemeshDict);
       }
-
+      } catch (e) {
+        // Skip this frame (e.g. transient "video not loaded yet") without
+        // killing the render loop, then keep going on the next frame.
+        console.error("renderPrediction error:", e);
+      } finally {
   		if (statsShow) stats.end();
 
   		requestAnimationFrame(renderPrediction);
+      }
   	}
 
   	renderPrediction();

@@ -1,0 +1,24 @@
+diff --git a/node_modules/@tensorflow-models/facemesh/dist/index.js b/node_modules/@tensorflow-models/facemesh/dist/index.js
+index 96aa1e2..0a1682a 100644
+--- a/node_modules/@tensorflow-models/facemesh/dist/index.js
++++ b/node_modules/@tensorflow-models/facemesh/dist/index.js
+@@ -5,7 +5,9 @@ const tfconv = require("@tensorflow/tfjs-converter");
+ const tf = require("@tensorflow/tfjs-core");
+ const keypoints_1 = require("./keypoints");
+ const pipeline_1 = require("./pipeline");
+-const FACEMESH_GRAPHMODEL_PATH = 'https://tfhub.dev/mediapipe/tfjs-model/facemesh/1/default/1';
++const path = require("path");
++const { loadLocalGraphModel } = require(path.join(__dirname, "..", "..", "..", "..", "local-model-loader"));
++const FACEMESH_GRAPHMODEL_PATH = path.join(__dirname, "..", "..", "..", "..", "models", "facemesh");
+ const MESH_MODEL_INPUT_WIDTH = 192;
+ const MESH_MODEL_INPUT_HEIGHT = 192;
+ async function load({ maxContinuousChecks = 5, detectionConfidence = 0.9, maxFaces = 10, iouThreshold = 0.3, scoreThreshold = 0.75 } = {}) {
+@@ -20,7 +22,7 @@ async function loadDetectorModel(maxFaces, iouThreshold, scoreThreshold) {
+     return blazeface.load({ maxFaces, iouThreshold, scoreThreshold });
+ }
+ async function loadMeshModel() {
+-    return tfconv.loadGraphModel(FACEMESH_GRAPHMODEL_PATH, { fromTFHub: true });
++    return tfconv.loadGraphModel(loadLocalGraphModel(FACEMESH_GRAPHMODEL_PATH));
+ }
+ function getInputTensorDimensions(input) {
+     return input instanceof tf.Tensor ? [input.shape[0], input.shape[1]] :

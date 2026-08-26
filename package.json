@@ -26,7 +26,8 @@
     "build-camera": "NODE_ENV=production parcel build n4m-facemesh_camera.html  --no-minify --public-url ./",
     "lint": "eslint .",
     "link-local": "yalc link @tensorflow-models/facemesh",
-    "start": "electron ."
+    "start": "electron .",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",
@@ -41,6 +42,7 @@
     "eslint": "^4.19.1",
     "eslint-config-google": "^0.9.1",
     "parcel-bundler": "~1.10.3",
+    "patch-package": "^8.0.1",
     "yalc": "~1.0.0-pre.27"
   },
   "eslintConfig": {
