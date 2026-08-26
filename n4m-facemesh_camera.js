@@ -541,6 +541,11 @@ async function setupCamera()
 async function changeVideoSource(newDevice)
 {
 	const video = document.getElementById("video");
+	if (video.srcObject) {
+		// Release the previous camera; otherwise it keeps capturing in the
+		// background and every switch piles on another live stream.
+		video.srcObject.getTracks().forEach(track => track.stop());
+	}
 	video.srcObject = null;
 	const mobile = isMobile();
 	const stream = await navigator.mediaDevices.getUserMedia({
@@ -1045,10 +1050,17 @@ function expMap(val, min, mid, max) {
 
 function detectFaces(video, net)
 {
+  // Switching cameras fires another 'loadeddata' on this same <video>; without
+  // this guard each switch would start an additional, independent rAF render
+  // loop stacked on top of the existing one(s), compounding facemesh
+  // inference cost with every switch (the reported lag-after-switching bug).
+  let renderLoopStarted = false;
   video.addEventListener('loadeddata', function() {
+     if (renderLoopStarted) return;
+     renderLoopStarted = true;
      // Video is loaded and can be played
   	const canvas = document.getElementById("output");
-  	const ctx = canvas.getContext("2d");
+  	const ctx = canvas.getContext("2d", {willReadFrequently: true});
   	// since images are being fed from a webcam
   	const flipHorizontal = true;
 
@@ -1063,6 +1075,13 @@ function detectFaces(video, net)
       try {
   		// Begin monitoring code for frames per second
     if (statsShow) stats.begin();
+
+    // While switching cameras, the video briefly has no frame data (e.g.
+    // readyState drops during the old-stream-stop/new-stream-negotiate
+    // window); skip the frame quietly instead of throwing every time.
+    if (video.readyState < 2) {
+      return;
+    }
 
     // Set transform each frame based on the toggle
     if (guiState.output.flipHorizontal) {
