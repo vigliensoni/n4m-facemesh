@@ -23,8 +23,12 @@
         margin: auto;
     }
 
+    /* .dg (the dat.gui panel) used to be hidden here too, inherited from the
+       original phone-facing web demo. The Electron window opens at 542px, so
+       that rule hid the controls outright unless the window was dragged wider
+       than 600px -- including the Devices menu needed to pick a camera. */
     @media only screen and (max-width: 600px) {
-      .footer-text, .dg {
+      .footer-text {
         display: none;
       }
     }
