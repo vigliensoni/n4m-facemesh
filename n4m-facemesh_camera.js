@@ -492,89 +492,226 @@ function drawPath(ctx, points, closePath)
   ctx.stroke();
 }
 
-/**
- * Loads a the camera to be used in the demo
- *
- */
-async function setupCamera()
+// A virtual camera (e.g. Elgato Virtual Camera with nothing streaming into it)
+// hands back a track that reports "live" but never delivers a frame, so the
+// <video> stays at readyState 0 and 'loadedmetadata' never fires. Waiting on
+// that event with no deadline hung startup before the GUI existed, leaving no
+// controls and no way to pick a working camera. Every camera gets a deadline
+// now, and one that misses it is skipped.
+const CAMERA_READY_TIMEOUT_MS = 3000;
+
+// enumerateDevices() tends to list virtual cameras first, but they only work
+// while their host app is streaming - the built-in camera always does, so it
+// is the default.
+const PREFERRED_CAMERA_PATTERN = /facetime|built-?in/i;
+
+let activeCameraDeviceId = null;
+let videoDeviceController = null;
+
+function showCameraError(message)
 {
-	if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-		throw new Error(
-			"Browser API navigator.mediaDevices.getUserMedia not available");
-	}
-
-	const video = document.getElementById("video");
-	video.width = videoWidth;
-	video.height = videoHeight;
-
-	const mobile = isMobile();
-	const stream = await navigator.mediaDevices.getUserMedia({
-		"audio": false,
-		"video": {
-			facingMode: "user",
-			width: mobile ? undefined : videoWidth,
-			height: mobile ? undefined : videoHeight
-		}
-	});
-	video.srcObject = stream;
-
-	return new Promise((resolve) => {
-		video.onloadedmetadata = () => {
-			resolve(video);
-		};
-	});
+	const info = document.getElementById("info");
+	info.textContent = message;
+	info.style.display = "block";
 }
 
-async function changeVideoSource(newDevice)
+function hideCameraError()
 {
-	const video = document.getElementById("video");
+	const info = document.getElementById("info");
+	info.textContent = "";
+	info.style.display = "none";
+}
+
+function stopVideoStream(video)
+{
 	if (video.srcObject) {
 		// Release the previous camera; otherwise it keeps capturing in the
 		// background and every switch piles on another live stream.
 		video.srcObject.getTracks().forEach(track => track.stop());
 	}
 	video.srcObject = null;
+}
+
+function waitForVideoMetadata(video, timeoutMs)
+{
+	if (video.readyState >= 1) { // HAVE_METADATA
+		return Promise.resolve();
+	}
+
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			cleanup();
+			reject(new Error(`no video within ${timeoutMs}ms`));
+		}, timeoutMs);
+
+		function cleanup() {
+			clearTimeout(timer);
+			video.removeEventListener("loadedmetadata", onMetadata);
+		}
+
+		function onMetadata() {
+			cleanup();
+			resolve();
+		}
+
+		video.addEventListener("loadedmetadata", onMetadata);
+	});
+}
+
+/**
+ * Points the <video> at one camera, resolving with that camera's label once it
+ * is actually delivering frames. Throws, leaving no stream attached, if it
+ * isn't.
+ */
+async function openCamera(video, deviceId)
+{
+	if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+		throw new Error(
+			"Browser API navigator.mediaDevices.getUserMedia not available");
+	}
+
+	video.width = videoWidth;
+	video.height = videoHeight;
+	stopVideoStream(video);
+
 	const mobile = isMobile();
-	const stream = await navigator.mediaDevices.getUserMedia({
+	const constraints = {
 		"audio": false,
 		"video": {
 			facingMode: "user",
 			width: mobile ? undefined : videoWidth,
-			height: mobile ? undefined : videoHeight,
-			deviceId: newDevice
+			height: mobile ? undefined : videoHeight
 		}
-	});
+	};
+	if (deviceId) {
+		constraints.video.deviceId = {exact: deviceId};
+	}
+
+	const stream = await navigator.mediaDevices.getUserMedia(constraints);
 	video.srcObject = stream;
+
+	try {
+		await waitForVideoMetadata(video, CAMERA_READY_TIMEOUT_MS);
+	} catch (e) {
+		stopVideoStream(video);
+		throw e;
+	}
+
 	try {
 		await video.play();
 	} catch (e) {
-		console.error("changeVideoSource: video.play() failed:", e);
+		console.error("openCamera: video.play() failed:", e);
 	}
+
+	activeCameraDeviceId = deviceId || null;
+	hideCameraError();
+
+	const track = stream.getVideoTracks()[0];
+	return track ? track.label : "";
 }
 
-async function loadVideo()
+/**
+ * Starts the preferred camera, falling through the rest so one that never
+ * delivers frames can't block startup.
+ */
+async function startCamera(video)
 {
-	const video = await setupCamera();
-	try {
-		await video.play();
-	} catch (e) {
-		console.error("loadVideo: video.play() failed:", e);
+	const devices = await listVideoInputs();
+	if (devices.length === 0) {
+		showCameraError("no camera found: this device has no camera, or this app was denied access to it");
+		return false;
 	}
 
-	return video;
+	const preferred = devices.filter(device => PREFERRED_CAMERA_PATTERN.test(device.label));
+	const candidates = preferred.concat(
+		devices.filter(device => !PREFERRED_CAMERA_PATTERN.test(device.label)));
+
+	for (const device of candidates) {
+		try {
+			const label = await openCamera(video, device.deviceId);
+			setActiveCameraLabel(label || device.label);
+			return true;
+		} catch (e) {
+			console.warn(`startCamera: "${device.label || device.deviceId}" delivered no video (${e.message}); trying the next camera`);
+		}
+	}
+
+	showCameraError("no connected camera delivered any video - start its app, then pick it from the Devices menu");
+	return false;
+}
+
+async function changeVideoSource(newDevice, label)
+{
+	const video = document.getElementById("video");
+	const previousDeviceId = activeCameraDeviceId;
+
+	try {
+		const activeLabel = await openCamera(video, newDevice);
+		setActiveCameraLabel(activeLabel || label);
+		return;
+	} catch (e) {
+		console.error(`changeVideoSource: "${label || newDevice}" delivered no video (${e.message})`);
+	}
+
+	// Going back to whatever was running keeps a dead pick from taking the
+	// render loop down with it.
+	if (previousDeviceId && previousDeviceId !== newDevice) {
+		try {
+			const restoredLabel = await openCamera(video, previousDeviceId);
+			setActiveCameraLabel(restoredLabel);
+			console.warn("changeVideoSource: kept the previous camera");
+			return;
+		} catch (e) {
+			console.error("changeVideoSource: could not restore the previous camera:", e.message);
+		}
+	}
+
+	showCameraError("that camera isn't delivering any video - start its app, or pick another one from the Devices menu");
+}
+
+async function listVideoInputs()
+{
+	let devices = (await navigator.mediaDevices.enumerateDevices())
+		.filter(device => device.kind === "videoinput");
+
+	// Labels stay blank until camera access has been granted once; a throwaway
+	// stream unlocks them so the Devices menu isn't a list of empty entries.
+	if (devices.length > 0 && devices.every(device => !device.label)) {
+		let probe = null;
+		try {
+			probe = await navigator.mediaDevices.getUserMedia({"audio": false, "video": true});
+			devices = (await navigator.mediaDevices.enumerateDevices())
+				.filter(device => device.kind === "videoinput");
+		} catch (e) {
+			console.warn("listVideoInputs: could not read camera labels:", e.message);
+		} finally {
+			if (probe) probe.getTracks().forEach(track => track.stop());
+		}
+	}
+
+	return devices;
 }
 
 async function listVideoDevices()
 {
-	const allDevices = await navigator.mediaDevices.enumerateDevices();
-	const videoDevices = allDevices.filter(device => device.kind === "videoinput").map(device => device.label);
-	return videoDevices;
+	return (await listVideoInputs()).map(device => device.label);
+}
+
+function setActiveCameraLabel(label)
+{
+	if (!label) {
+		return;
+	}
+	guiState.devices.videoDevices = label;
+	if (videoDeviceController) {
+		videoDeviceController.updateDisplay();
+	}
 }
 
 const guiState =
 {
 	devices: {
-		videoDevices: []
+		videoDevices: "" // label of the camera currently feeding the render loop
 	},
   backend: store.get("storeBackend"),
   input: {
@@ -616,14 +753,18 @@ async function setupGui(cameras, net)
 
 	let devices = gui.addFolder("Devices");
 	const videoDevices = await listVideoDevices();
-	const videoDeviceController = devices.add(guiState.devices, "videoDevices", videoDevices);
+	videoDeviceController = devices.add(guiState.devices, "videoDevices", videoDevices).name("Camera");
 
 	videoDeviceController.onChange(async function (selectedDevice)
   {
-		const allDevices = await navigator.mediaDevices.enumerateDevices();
-		const matchedDeviceId = allDevices.filter(device => device.label === selectedDevice).map(device => device.deviceId);
-    changeVideoSource(matchedDeviceId);
+		const matched = (await listVideoInputs()).find(device => device.label === selectedDevice);
+		if (!matched) {
+			console.warn(`setupGui: camera "${selectedDevice}" is no longer connected`);
+			return;
+		}
+    await changeVideoSource(matched.deviceId, selectedDevice);
 	});
+	devices.open();
 
   gui.add(guiState, 'backend', ['wasm', 'webgl', 'cpu'])
     .onChange(async backend => {
@@ -1255,22 +1396,20 @@ async function bindPage()
 	document.getElementById("loading").style.display = "none";
 	document.getElementById("main").style.display = "block";
 
-	let video;
+	const video = document.getElementById("video");
 
-	try {
-		video = await loadVideo();
-	} catch (e) {
-		let info = document.getElementById("info");
-		info.textContent = "this browser does not support video capture," +
-        "or this device does not have a camera";
-		info.style.display = "block";
-		throw e;
-	}
-
-	setupGui([], net);
+	// The GUI is built before any camera is opened, so the Devices menu is
+	// reachable even when every camera is misbehaving.
+	await setupGui([], net);
 	initMIDI();
 	if (statsShow) setupFPS();
-  detectFaces(video, net);
+
+	// detectFaces() starts its render loop off the video's 'loadeddata' event,
+	// so arming it before a stream is attached is fine - and means the loop
+	// still starts if the first usable camera is one picked later by hand.
+	detectFaces(video, net);
+
+	await startCamera(video);
 }
 
 
